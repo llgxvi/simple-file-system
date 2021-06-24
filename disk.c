@@ -18,8 +18,8 @@
 int make_disk(char *name);
 int open_disk(char *name);
 int close_disk();
-int block_write(int block,char *buf,int bufSize);
-int block_read( int block,char *buf,int bufSize);
+int block_write(int block, char *buf, int bufSize);
+int block_read( int block, char *buf, int bufSize);
 
 // Private variables
 static int active = 0;
@@ -31,7 +31,7 @@ int make_disk(char *name)
   int f;
   char buf[BLOCK_SIZE];
 
-  f = open(name, O_WRONLY|O_CREAT|O_TRUNC, 0644);
+  f = open(name, O_WRONLY | O_CREAT | O_TRUNC, 0644);
   memset(buf, 0, BLOCK_SIZE);
 
   for (int i=0; i<DISK_BLOCKS; i++)
@@ -133,8 +133,8 @@ int main() {
 
   make_disk("disk.test");
   open_disk("disk.test");
-  block_write(3, buf1, BLOCK_SIZE);
-  block_read( 3, buf2, BLOCK_SIZE);
+  block_write(3, buf1, sizeof buf1);
+  block_read( 3, buf2, sizeof buf2);
   close_disk();
 
   for (int i=0; i<BLOCK_SIZE; i++) {

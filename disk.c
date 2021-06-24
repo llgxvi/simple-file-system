@@ -137,7 +137,7 @@ int main() {
   block_read( 3, buf2, sizeof buf2);
   close_disk();
 
-  for (int i=0; i<BLOCK_SIZE; i++) {
+  for (int i=0; i<sizeof(buf2); i++) {
     printf("%d ", buf2[i]);
   }
 

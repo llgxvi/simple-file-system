@@ -1,38 +1,50 @@
-// array size as function parameter
-// https://stackoverflow.com/a/609284
+#include <stdio.h>  // printf
+#include <unistd.h> // read, write, close, lseek
+#include <fcntl.h>  // O_CREAT
+#include <string.h> // strcmp, memset
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <string.h>
 
-// 4096 X 8192
-// 33,554,432 Bytes
-// 32,768     KB
-// 32         MB
+// 📂
+// 4096 * 8192
+// 33,554,432  Bytes
+// 32,768      KB
+// 32          MB
 #define DISK_BLOCKS 8192
-#define BLOCK_SIZE  4096
+#define BLOCK_SIZE  4096 // Bytes
 
-// Function prototypes
+
+// 📂 Function prototypes
+void pe(char *one, const char *f);
 int make_disk(char *name);
 int open_disk(char *name);
 int close_disk();
-int block_write(int block, char *buf, int bufSize);
-int block_read( int block, char *buf, int bufSize);
+int block_write(int block, char *buf, int buf_size);
+int block_read( int block, char *buf, int buf_size);
+int check(int block, char *buf, int buf_size, const char *f);
 
-// Private variables
+
+// 📂 Private variables
 static int active = 0;
-static int handle; 
+static int handle = -1;
 
-//
+
+// 📂
+// f: __func__
+void pe(char *one, const char *f) {
+  if (strcmp(f, "") == 0)
+    printf("⚠️ %s\n", one);
+  else
+    printf("⚠️ %s() %s\n", f, one);
+}
+
+
+// 📂
 int make_disk(char *name)
 { 
   int f;
-  char buf[BLOCK_SIZE];
+  char buf[BLOCK_SIZE] = "";
 
   f = open(name, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-  memset(buf, 0, BLOCK_SIZE);
 
   for (int i=0; i<DISK_BLOCKS; i++)
     write(f, buf, BLOCK_SIZE);
@@ -42,13 +54,13 @@ int make_disk(char *name)
   return 0;
 }
 
-//
+
 int open_disk(char *name)
 {
   int f;
   
   if (active) {
-    perror("open_disk: disk already open\n");
+    pe("disk already open", __func__);
     return -1;
   }
   
@@ -60,85 +72,86 @@ int open_disk(char *name)
   return 0;
 }
 
-//
+
 int close_disk()
 {
   if (!active) {
-    perror("close_disk: disk already closed\n");
+    pe("disk already closed", __func__);
     return -1;
   }
   
   close(handle);
-  active = handle = 0;
+  active = 0;
+  handle = -1;
 
   return 0;
 }
 
-//
-int block_write(int block, char *buf, int bufSize)
+
+int block_write(int block, char *buf, int buf_size)
+{
+  if (check(block, buf, buf_size, __func__) == -1)
+    return -1;
+
+  lseek(handle, block*BLOCK_SIZE, SEEK_SET);
+
+  write(handle, buf, buf_size);
+
+  return 0;
+}
+
+
+int block_read(int block, char *buf, int buf_size)
+{
+  if (check(block, buf, buf_size, __func__) == -1)
+    return -1;
+
+  lseek(handle, block*BLOCK_SIZE, SEEK_SET);
+
+  read(handle, buf, buf_size);
+
+  return 0;
+}
+
+
+// 📂
+// f: __func__
+int check(int block, char *buf, int buf_size, const char *f)
 {
   if (!active) {
-    perror("block_write: disk not open\n");
+    pe("disk not open", f);
     return -1;
   }
 
   if ((block<0) || (block>=DISK_BLOCKS)) {
-    perror("block_write: block index out of range\n");
+    pe("block out of range", f);
     return -1;
   }
 
-  if (bufSize != BLOCK_SIZE) {
-    perror("block_write: buf size must equal block size\n");
+  if (buf_size<0 || buf_size>BLOCK_SIZE) {
+    pe("buf_size out of range", f);
     return -1;
   }
-
-  lseek(handle, block * BLOCK_SIZE, SEEK_SET);
-
-  write(handle, buf, BLOCK_SIZE);
 
   return 0;
 }
 
-//
-int block_read(int block, char *buf, int bufSize)
-{
-  if (!active) {
-    perror("block_read: disk not open\n");
-    return -1;
-  }
 
-  if ((block<0) || (block>=DISK_BLOCKS)) {
-    perror("block_read: block index out of range\n");
-    return -1;
-  }
-
-  if (bufSize != BLOCK_SIZE) {
-    perror("block_read: buf size must equal block size\n");
-    return -1;
-  }
-
-  lseek(handle, block * BLOCK_SIZE, SEEK_SET);
-
-  read(handle, buf, BLOCK_SIZE);
-
-  return 0;
-}
-
-// Test
+// 📂 Test
 int main() {
-  char buf1[BLOCK_SIZE];
-  char buf2[BLOCK_SIZE];
+  char buf1[10];
+  char buf2[20];
 
-  memset(buf1, 100, BLOCK_SIZE);
+  memset(buf1, 100, sizeof(buf1));
 
   make_disk("disk.test");
   open_disk("disk.test");
-  block_write(3, buf1, sizeof buf1);
-  block_read( 3, buf2, sizeof buf2);
+  block_write(3, buf1, sizeof(buf1));
+  block_read( 3, buf2, sizeof(buf2));
   close_disk();
 
   for (int i=0; i<sizeof(buf2); i++) {
-    printf("%d ", buf2[i]);
+    printf("%d %d\n", i, buf2[i]);
   }
 
   return 0;

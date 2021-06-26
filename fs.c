@@ -13,17 +13,17 @@ file data      | 501-
 
 
 // 📂
-#include <stdio.h>
-#include <stdlib.h>
+#define FI_START = 1   // file info
+#define FD_START = 501 // file data
 
-
-// 📂
 #define FN_MAX_LEN 256 // file name
 #define FD_MAX_NUM 32  // file descriptor
 #define F_MAX_NUM  7500
 
-#define FI_START = 1   // file info
-#define FD_START = 501 // file data
+
+// 📂
+#include <stdio.h>
+#include <string.h>
 
 
 // 📂
@@ -48,7 +48,7 @@ typedef struct
 // 15   * 500 = 7500
 // file_info.head holds 1st block num of file data
 // 1st int of every file data block holds block num of next file data block
-// 1st int of the last file data block is 0
+// 1st int of the last file data block is -1
 typedef struct
 {
   bool used;             // 4
@@ -74,6 +74,7 @@ file_descriptor FD[FD_MAX_NUM];
 
 
 // 📂
+// ✅✅
 int make_fs(char *disk_name)
 {
   make_disk(disk_name);
@@ -85,9 +86,10 @@ int make_fs(char *disk_name)
   SP->fd_start = FD_START;
 
   // write super block to disk block 0
-  char buf[BLOCK_SIZE] = "";
-  memcpy(buf, SP, sizeof(*SP));
-  bw(0, buf, sizeof(buf));
+  int s = sizeof(*SP);
+  char buf[s] = "";
+  memcpy(buf, SP, s);
+  bw(0, buf, s);
 
   free(SP);
   close_disk();
@@ -97,46 +99,48 @@ int make_fs(char *disk_name)
 }
 
 
+// ✅✅
 int mount_fs(char *disk_name)
 {
   open_disk(disk_name);
 
   // read super block
-  char buf[BLOCK_SIZE] = "";
-  br(0, buf, sizeof(buf));
-  memcpy(SP, buf, sizeof(*SP));
+  int s = sizeof(super_block);
+  char buf[s] = "";
+  br(0, buf, s);
+  memcpy(SP, buf, s);
 
   // read file info
-  int n = SP->f_num;
-  int s = sizeof(file_info) * n;
-  char buf_1[s] = "";
-  br(SP->fi_start, buf_1, s);
-  memcpy(FI, buf_1, s);
+  s = sizeof(file_info) * SP->f_num;
+  char buf2[s] = "";
+  br(SP->fi_start, buf2, s);
+  memcpy(FI, buf2, s);
 
   pr("✅ file system [%s] mounted\n", disk_name);
   return 0;
 }
 
 
+// ✅✅
 int umount_fs(char *disk_name)
 {
   // write super block
-  char buf[BLOCK_SIZE] = "";
-  memcpy(buf, SP, sizeof(*SP));
-  bw(0, buf, sizeof(buf));
+  int s = sizeof(super_block);
+  char buf[s] = "";
+  memcpy(buf, SP, s);
+  bw(0, buf, s);
 
   // write file info
-  int n = SP->f_num;
-  int s = sizeof(file_info) * n;
-  char buf_1[s] = "";
-  char *p = buf_1;
+  s = sizeof(file_info) * SP->f_num;
+  char buf2[s] = "";
+  char *p = buf2;
   for (int i=0; i<F_MAX_NUM; i++) {
     if (FI[i].used) {
       memcpy(p, &FI[i], sizeof(file_info));
       p += sizeof(file_info);
     }
   }
-  bw(SP->fi_start, buf_1, s);
+  bw(SP->fi_start, buf2, s);
 
   close_disk();
 
@@ -145,20 +149,32 @@ int umount_fs(char *disk_name)
 }
 
 
+// ✅✅
 int fs_create(char *name)
 {
-  if (f_check_exists(name, __func__))
+  if (!is_fn_valid(name)) {
+    pe("invalid file name");
     return -1;
+  }
 
-  int i = f_get_new_i(name, __func__);
-  if (i < 0)
+  if (is_f_exists(name)) {
+    pe("file exists");
     return -1;
+  }
 
-  FI[i].used = true;
-  strcpy(FI[i].name, name);
-  FI[i].size = 0;
-  FI[i].head = 0;
-  FI[i].fd_count = 0;
+  int fi;
+
+  fi = get_new_fi(name);
+  if (fi < 0) {
+    pe("exceed file number limit");
+    return -1;
+  }
+
+  FI[fi].used = true;
+  strcpy(FI[fi].name, name);
+  FI[fi].size = 0;
+  FI[fi].head = 0;
+  FI[fi].fd_count = 0;
 
   SP->f_num++;
 
@@ -167,148 +183,232 @@ int fs_create(char *name)
 }
 
 
+// ✅✅
 int fs_delete(char *name)
 {
-  if (!f_check_exists(name, __func__))
+  if (!is_fn_valid(name)) {
+    pe("invalid file name");
     return -1;
-
-  if (f_check_in_use(name, __func__))
-    return -1;
-
-  int i = f_get_i_by_name(name, __func__);
-  if (i < 0)
-    return -1;
-
-  // del file data
-  int s = sizeof(int);
-  char buf[s] = "";
-  int block = FI[i].head;
-  while (block != 0) {
-    bw(block, 0, s);
-    br(block, buf, s);
-    memcpy(&block, buf, s);
   }
 
-  FI[i].used = false;
+  if (!is_f_exists(name)) {
+    pe("file not exists");
+    return -1;
+  }
+
+  if (is_f_in_use(name)) {
+    pe("file in use");
+    return -1;
+  }
+
+  int fi = get_fi_by_name(name);
+
+  FI[fi].used = false;
   SP->f_num--;
+
+  // del file data
+  int block = FI[fi].head;
+  while (block != -1) {
+    set_block_addr(block, 0);
+    block = get_next_block(block);
+  }
 
   pr("✅ file [%s] deleted\n", name);
   return 0;
 }
 
 
+// ✅✅
 int fs_open(char *name)
 {
-  if (!f_check_exists(name, __func__))
+  if (!is_fn_valid(name)) {
+    pe("invalid file name");
     return -1;
+  }
 
-  int fd = fd_get_new_i(__func__);
-  if (fd < 0)
+  if (!is_f_exists(name)) {
+    pe("file not exists");
     return -1;
+  }
 
-  int i = f_get_i_by_name(name, __func__);
-  if (i < 0)
+  int fd = get_new_fd();
+
+  if (fd < 0) {
+    pe("no fd available");
     return -1;
+  }
 
-  FI[i].fd_count++;
+  int fi = get_fi_by_name(name);
+
+  FI[fi].fd_count++;
   FD[fd].used = true;
-  FD[fd].fi = i;
+  FD[fd].fi = fi;
   FD[fd].offset = 0;
 
   pr("✅ file [%s] opened\n", name);
-  return j;
+  return fd;
 }
 
 
+// ✅✅
 int fs_close(int fd)
 {
-  if (!fd_check_valid(fd, __func__))
+  if (!is_fd_valid(fd)) {
+    pe("invalid fd");
     return -1;
+  }
 
-  int i = FD[fd].fi;
+  int fi = FD[fd].fi;
 
-  // write data
-  XXX
-
-  FI[i].size = XXX;
-  FI[i].fd_count--;
+  FI[fi].fd_count--;
   FD[fd].used = false;
- 
-  pr("%s ", __func__);
-  pr("file [%s] closed\n", FI[i].name);
+
+  pr("✅ file [%s] closed\n", FI[fi].name);
   return 0;
 }
 
 
+// ✅❓
 // https://man7.org/linux/man-pages/man2/read.2.html
 int fs_read(int fd, void *buf, size_t count)
 {
-  if (!fd_check_valid(fd, __func__))
+  if (!is_fd_valid(fd)) {
+    pe("invalid fd");
     return -1;
+  }
 
   if (count <= 0) {
-    pe("invalid count", __func__);
+    pe("invalid count");
     return -1;
   }
 
-  int i = FD[fd].fi;
+  int offset = FD[fd].offset;
+  int fi = FD[fd].fi;
+  int s = FI[fi].size;
+ 
+  if (offset >= s) {
+    return -1;
+  }
 
-  int s = count;
-  if (s > FI[i].size)
-    s = FI[i].size;
+  if (count > (s-offset))
+    count = s-offset;
+
   int s2 = sizeof(int);
   int s3 = BLOCK_SIZE - sizeof(int);
+  int s4 = s3 - offset % s3;
+  int s5 = (count+offset) % s3;
 
-  char buf[s] = "";
+  char buf_[count] = "";
   char *p = buf;
 
-  int block = FI[i].head;
-  char buf_block[s2] = "";
-
-  int blocks = (s-1)/BLOCK_SIZE + 1;
-  while (blocks > 0) {
-    if (blocks != 1)
-      br(block + s2, p, s3);
-    else
-      br(block + s2, p, s % s3);
+  int block = get_block_by_size(offset);
+  char buf4[s4] = "";
+  br(block+s2, buf4, s4);
+  memcpy(p, buf4, s4);
+ 
+  int blocks = (count-offset)/s3;
+  char buf3[s3] = "";
+  while (blocks > 1) {
+    br(block+s2, buf3, s3);
+    memcpy(p, buf3, s3);
     p += s3;
-
-    br(block, buf_block, s2);
-    memcpy(&block, buf_block, s2);
-
+    block = get_next_block(block);
     blocks-=1;
   }
+  char buf5[s5] = "";
+  br(block+s2, buf5, s5);
+  memcpy(p, buf5, s5);
+
+  memcpy(buf, buf_, count);
+  FD[fd].offset += count;
+  return count;
 }
 
 
+// ✅❓
 // https://man7.org/linux/man-pages/man2/write.2.html
 int fs_write(int fd, void *buf, size_t count)
 {
-  if (!fd_check_valid(fd, __func__))
-    return -1;
-
-  if (count <= 0) {
-    pe("invalid count", __func__);
+  if (!is_fd_valid(fd)) {
+    pe("invalid fd");
     return -1;
   }
 
-  Xxx
+  if (count <= 0) {
+    pe("invalid count");
+    return -1;
+  }
+
+  int offset = FD[fd].offset;
+  int fi = FD[fd].fi;
+  int s = FI[fi].size;
+ 
+  if (offset >= s) {
+    return -1;
+  }
+
+  if (count > (s-offset))
+    count = s-offset;
+
+  int offset = FD[fd].offset;
+  int block = get_block_by_size(offset);
+
+  int s2 = sizeof(int);
+  int s3 = BLOCK_SIZE - sizeof(int);
+  int s4 = s3 - offset % s3;
+  int s5 = (count+offset) % s3;
+
+  //❓
+  if (count < s4) {
+    char buf4[s4] = "";
+    memcpy(buf4, buf, count);
+    buf4[count] = -1;
+    bw(block+s2+offset%s3, buf4, s4);
+  }
+  
+  int blocks = (count-offset)/s3;
+  char buf3[s3] = "";
+  while (blocks > 1) {
+    br(block+s2, buf3, s3);
+    memcpy(p, buf3, s3);
+    p += s3;
+    block = get_next_block(block);
+    blocks-=1;
+  }
+  char buf5[s5] = "";
+  br(block+s2, buf5, s5);
+  memcpy(p, buf5, s5);
+
+  memcpy(buf, buf_, count);
+  FD[fd].offset += count;
+  return count;
 }
 
 
+// ✅✅
 // https://man7.org/linux/man-pages/man2/lseek.2.html
 int fs_lseek(int fd, int offset, int whence=0)
 {
-  if (!fd_check_valid(fd, __func__))
-    return -1;
-
-  if (offset<0 || offset>=FI[FD[fd].fi].size) {
-    pr("%s offset beyond range\n", __func__);
+  if (!is_fd_valid(fd)) {
+    pe("invalid fd");
     return -1;
   }
 
-  if (whence<0 || whence>=FI[FD[fd].fi].size) {
-    pr("%s whence beyond range\n", __func__);
+  int fi = FD[fd].fi;
+  int s = FI[fi].size;
+
+  if (offset<0 || offset>=s) {
+    pe("offset beyond range");
+    return -1;
+  }
+
+  if (whence<0 || whence>=s) {
+    pe("whence beyond range");
+    return -1;
+  }
+
+  if ((whence+offset) >= s) {
+    pe("whence+offset beyond range");
     return -1;
   }
 
@@ -319,62 +419,72 @@ int fs_lseek(int fd, int offset, int whence=0)
 }
 
 
+// ✅✅
 // https://man7.org/linux/man-pages/man2/ftruncate.2.html
 int fs_truncate(int fd, int length)
 {
-  if (!fd_check_valid(fd, __func__))
-    return -1;
-
-  if (length <= 0) {
-    pe("length must be > 0", __func__);
+  if (!is_fd_valid(fd)) {
+    pe("invalid fd");
     return -1;
   }
 
-  int i = FD[fd].fi;
-  int s = FD[fd].size;
+  if (length < 0) {
+    pe("length must be >= 0");
+    return -1;
+  }
+
+  int fi = FD[fd].fi;
+  int s = FI[fi].size;
   int s2 = sizeof(int);
   int s3 = BLOCK_SIZE - sizeof(int);
   int s4 = s3 - s % s3
 
   if (length < s) {
-    int block = get_block_num_by_size(i, length);
+    int block = get_block_by_size(fi, length);
 
     // update EOF
     char buf3[s3] = "";
     br(block+s2, buf3, s3);
-    buf3[length % s3 - 1] = -1;
+    buf3[length % s3] = -1;
     bw(block+s2, buf3, s3);
 
+    int next = get_next_block(block);
+    set_block_addr(block, -1);
+
     // free blocks
-    char buf2[s2] = "";
-    while (block) {
-      bw(block, buf2, s2);
-      block = get_next_block_num(block);
-      if (block == -1)
-        break;
+    while (next != -1) {
+      set_block_addr(next, 0);
+      next = get_next_block(next);
     }
   }
 
-  // zero padding
   if (length > s) {
-    int block = get_block_num_by_size(i, s);
+    int block = get_block_by_size(fi, s);
 
-    // update og last block
+    // replace EOF with zero padding
     char buf4[s4] = "";
-    bw(block+s2+s%s3-1, buf4, s4);
+    bw(block+s2+s%s3, buf4, s4);
 
-    //
-    int t = (length-s-1)/s3 + 1
-    char buf3[s3] = "";
-    while (t > 0) {
-      int n = get_free_block_num();
-      clean_block(n);
-      update_block_addr(block, n);
-      block = n;
-      t-=1;
+    // (length-1)/s3 + 1
+    // -
+    // (s-1)/s3 + 1
+    int c = (length-s)/s3;
+    while (c > 0) {
+      int next = get_free_block();
+      clean_block(next);
+      update_block_addr(block, next);
+      block = next;
+      c-=1;
     }
+
+    // set new EOF
+    char buf3[s3] = "";
+    buf3[length % s3] = -1;
+    bw(block+s2, buf3, s3);
+    set_block_addr(block, -1);
   }
 
+  pr("✅ %s", __func__);
   return 0;
 }
 

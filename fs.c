@@ -541,6 +541,22 @@ int get_next_block(int curr) {
 
 
 // ✅✅
+int get_next_or_free_block(int curr) {
+  int block;
+
+  block = get_next_block(curr);
+  if (block != -1)
+    return block;
+
+  block = get_free_block();
+  if (block != -1)
+    return block;
+
+  return -1;
+}
+
+
+// ✅✅
 int get_block_by_size(int fi, int size) {
   if (size > FI[fi].size) {
     return -1;

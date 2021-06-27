@@ -268,9 +268,8 @@ int fs_close(int fd)
 }
 
 
-// ✅❓
-// https://man7.org/linux/man-pages/man2/read.2.html
-int fs_read(int fd, void *buf, size_t count)
+// ✅✅
+int fs_read(int fd, char *buf, int count)
 {
   if (!is_fd_valid(fd)) {
     pe("invalid fd");
@@ -278,50 +277,59 @@ int fs_read(int fd, void *buf, size_t count)
   }
 
   if (count <= 0) {
-    pe("invalid count");
+    pe("count should be > 0");
     return -1;
   }
 
-  int offset = FD[fd].offset;
   int fi = FD[fd].fi;
-  int s = FI[fi].size;
+  int s1 = FI[fi].size;
+  int offset = FD[fd].offset;
  
-  if (offset >= s) {
-    return -1;
+  if (offset >= s1) {
+    //
   }
 
-  if (count > (s-offset))
-    count = s-offset;
+  if (count + offset > s1)
+    count = s1 - offset;
 
+  int s;
   int s2 = sizeof(int);
   int s3 = BLOCK_SIZE - sizeof(int);
-  int s4 = s3 - offset % s3;
-  int s5 = (count+offset) % s3;
 
-  char buf_[count] = "";
   char *p = buf;
+  int c = count;
 
+  //
   int block = get_block_by_size(offset);
-  char buf4[s4] = "";
-  br(block+s2, buf4, s4);
-  memcpy(p, buf4, s4);
- 
-  int blocks = (count-offset)/s3;
-  char buf3[s3] = "";
-  while (blocks > 1) {
-    br(block+s2, buf3, s3);
-    memcpy(p, buf3, s3);
-    p += s3;
-    block = get_next_block(block);
-    blocks-=1;
+  s = s3 - offset % s3;
+  if (c <= s) {
+    char b[c] = "";
+    br(block+s2+offset%s3, b, c);
+    memcpy(p, b, c);
+    return c;
   }
-  char buf5[s5] = "";
-  br(block+s2, buf5, s5);
-  memcpy(p, buf5, s5);
 
-  memcpy(buf, buf_, count);
-  FD[fd].offset += count;
-  return count;
+  //
+  p += s;
+  c -= s;
+
+  while (c > 0) {
+    block = get_next_block(block);
+
+    if (c >= s3) {
+      char b[s3] = "";
+      br(block+s2, b, s3);
+      memcpy(p, b, s3);
+      p += s3;
+      c -= s3;
+      continue;
+    }
+
+    char b[c] = "";
+    br(block+s2, b, c);
+    memcpy(p, b, c);
+    return count;
+  }
 }
 
 

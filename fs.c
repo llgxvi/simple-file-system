@@ -325,9 +325,8 @@ int fs_read(int fd, void *buf, size_t count)
 }
 
 
-// ✅❓
-// https://man7.org/linux/man-pages/man2/write.2.html
-int fs_write(int fd, void *buf, size_t count)
+// ✅✅
+int fs_write(int fd, char *buf, int count)
 {
   if (!is_fd_valid(fd)) {
     pe("invalid fd");
@@ -335,53 +334,62 @@ int fs_write(int fd, void *buf, size_t count)
   }
 
   if (count <= 0) {
-    pe("invalid count");
+    pe("count should be > 0");
     return -1;
   }
 
-  int offset = FD[fd].offset;
   int fi = FD[fd].fi;
-  int s = FI[fi].size;
- 
-  if (offset >= s) {
-    return -1;
-  }
-
-  if (count > (s-offset))
-    count = s-offset;
-
   int offset = FD[fd].offset;
-  int block = get_block_by_size(offset);
 
+  int s;
+  int s1 = FI[fi].size;
   int s2 = sizeof(int);
   int s3 = BLOCK_SIZE - sizeof(int);
-  int s4 = s3 - offset % s3;
-  int s5 = (count+offset) % s3;
 
-  //❓
-  if (count < s4) {
-    char buf4[s4] = "";
-    memcpy(buf4, buf, count);
-    buf4[count] = -1;
-    bw(block+s2+offset%s3, buf4, s4);
-  }
-  
-  int blocks = (count-offset)/s3;
-  char buf3[s3] = "";
-  while (blocks > 1) {
-    br(block+s2, buf3, s3);
-    memcpy(p, buf3, s3);
-    p += s3;
-    block = get_next_block(block);
-    blocks-=1;
-  }
-  char buf5[s5] = "";
-  br(block+s2, buf5, s5);
-  memcpy(p, buf5, s5);
+  char *p = buf;
+  int c = count;
 
-  memcpy(buf, buf_, count);
-  FD[fd].offset += count;
-  return count;
+  //
+  int block = get_block_by_size(offset);
+  s = s3 - offset % s3;
+  if (c < s) {
+    char b[s] = "";
+    memcpy(b, p, c);
+    b[c] = -1;
+    bw(block+s2+offset%s3, b, c+1);
+    return count;
+  }
+
+  //
+  p += s;
+  c -= s;
+
+  int curr = block;
+
+  while (c >= 0) {
+    int next = get_next_or_free_block(curr);
+    if (next == -1) {
+      pe("no more space");
+      return -1;
+    }
+    block_set_addr(curr, next);
+    curr = next;
+
+    if (c >= s3) {
+      char b[s3] = "";
+      memcpy(b, p, c);
+      bw(next+s2, b, c);
+      p += s3;
+      c -= s3;
+      continue;
+    }
+
+    char b[s3] = "";
+    memcpy(b, p, c);
+    b[c] = -1;
+    bw(next+s2, b, c+1);
+    return count;
+  }
 }
 
 
